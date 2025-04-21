@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BuzzCoach</title>
+  <style>
+    body { background-color: #fffbe6; font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; color: #333; }
+    h2 { text-align: center; color: #613400; }
+    .question-container { background: #fffdf0; border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; }
+    #timer { position: absolute; top: 10px; left: 20px; color: #1890ff; }
+    .text-block { margin-top: 20px; display: none; font-weight: bold; }
+    .replay-btn { padding: 5px 10px; margin-right: 10px; border-radius: 6px; border: 1px solid #ffe58f; background: #fffbe6; cursor: pointer; }
+    .nav-buttons { text-align: center; margin-top: 20px; }
+    .nav-buttons button { padding: 10px 20px; border-radius: 6px; margin: 0 10px; background: #ffe58f; border: none; cursor: pointer; }
+    .nav-buttons button:hover { background: #ffdd66; }
+    #progress, #stats { text-align: center; margin: 10px 0; }
+    .word { cursor: pointer; border-bottom: 1px dashed #666; }
+    #loader { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; }
+  </style>
+</head>
+<body>
+  <h2><span style="margin-right: 10px;">🐝</span>BuzzCoach</h2>
+  <div id="loader">⏳ Loading questions...</div>
+
+  <div style="text-align: center; margin-bottom: 10px;">
+    <button onclick="speak('BuzzCoach is ready!', true)" class="replay-btn">🔈 Test Speech</button>
+  </div>
+
+  <div class="filters" style="text-align:center; margin-bottom:10px;">
+    <label><input type="checkbox" id="favoriteFilter"> ⭐ Favorites Only</label>
+    <label><input type="checkbox" id="unviewedFilter"> 🆕 Unseen Only</label>
+  </div>
+  
+  <div id="progress"></div>
+  <div id="stats"></div>
+
+  <div class="question-container">
+    <div id="timer">Time: 0s</div>
+    <div id="fav-container" style="position:absolute;top:10px;right:20px;"></div>
+    <div id="source" class="text-block" style="display: none; color: #666; font-size: 0.9em;"></div>
+    <div id="question" class="text-block"></div>
+    <div id="answer" class="text-block"></div>
+    <div id="explanation" class="text-block"></div>
+  </div>
+
+  <div class="nav-buttons">
+    <button id="prevBtn">Previous Question</button>
+    <button id="showAnswerBtn">Reveal Answer</button>
+    <button id="nextBtn">Next Question</button>
+  </div>
+
+<script src="questions.js"></script>
+<script>
+// 初始化变量
+let filtered = [];
+let currentIndex = 0;
+let timer = 0;
+let interval;
+let hasUserInteracted = false;
+
+// 单词点击处理
+function handleWordClick(e) {
+  if (e.target.classList.contains('word')) {
+    speak(e.target.textContent);
+  }
+}
+
+// 文字处理
+function wrapWords(text) {
+  return (text || '').split(/(\s+)/).map(part => 
+    /\s+/.test(part) ? part : `<span class='word'>${part}</span>`
+  ).join('');
+}
+
+// 语音功能
+function speak(text, force = false) {
+  if (!text || (!hasUserInteracted && !force)) return;
+  
+  const synth = window.speechSynthesis;
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voices = synth.getVoices();
+  
+  const preferredVoice = voices.find(v => v.name.includes("Google US English")) ||
+                        voices.find(v => v.lang === "en-US") ||
+                        voices[0];
+  
+  if (preferredVoice) utterance.voice = preferredVoice;
+  synth.cancel();
+  synth.speak(utterance);
+}
+
+// 加载题目
+function loadQuestion() {
+  document.getElementById('loader').style.display = 'none';
+  const q = filtered[currentIndex];
+  if (!q) return;
+
+  document.querySelector('.question-container').removeEventListener('click', handleWordClick);
+  document.querySelector('.question-container').addEventListener('click', handleWordClick);
+
+  clearInterval(interval);
+  timer = 0;
+  document.getElementById('timer').textContent = "Time: 0s";
+  
+  interval = setInterval(() => {
+    timer++;
+    document.getElementById('timer').textContent = `Time: ${timer}s`;
+  }, 1000);
+
+  q.viewed = true;
+
+  document.getElementById('source').textContent = `📚 ${q.year} - ${q.round}`;
+  document.getElementById('question').innerHTML = `<button class='replay-btn'>🔊</button>` + wrapWords(q.question);
+  document.getElementById('answer').innerHTML = `<button class='replay-btn'>🔊</button> Answer: ` + wrapWords(q.answer);
+  document.getElementById('explanation').innerHTML = `<button class='replay-btn'>🔊</button> ` + wrapWords(q.explanation || '');
+
+  ['source', 'question', 'answer', 'explanation'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+
+  document.querySelectorAll('.replay-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const text = e.target.parentElement.textContent.replace('🔊', '').trim();
+      speak(text);
+    };
+  });
+
+  document.getElementById('progress').textContent = `📊 Question ${currentIndex + 1} of ${filtered.length}`;
+  document.getElementById('stats').textContent = `⭐ Favorites: ${questions.filter(q => q.favorite).length} | Viewed: ${questions.filter(q => q.viewed).length}`;
+
+  speak(q.question);
+}
+
+function showAnswer() {
+  ['source', 'question', 'answer', 'explanation'].forEach(id => {
+    document.getElementById(id).style.display = 'block';
+  });
+}
+
+// 事件绑定
+document.getElementById('prevBtn').onclick = () => {
+  currentIndex = (currentIndex - 1 + filtered.length) % filtered.length;
+  loadQuestion();
+};
+
+document.getElementById('nextBtn').onclick = () => {
+  currentIndex = (currentIndex + 1) % filtered.length;
+  loadQuestion();
+};
+
+document.getElementById('showAnswerBtn').onclick = showAnswer;
+
+document.body.addEventListener('click', () => {
+  if (!hasUserInteracted) {
+    hasUserInteracted = true;
+    speechSynthesis.cancel();
+  }
+}, { once: true });
+
+// 初始化
+function initialize() {
+  document.getElementById('loader').style.display = 'block';
+  
+  setTimeout(() => {
+    filtered = questions.filter(q => {
+      const favOnly = document.getElementById('favoriteFilter').checked;
+      const unviewedOnly = document.getElementById('unviewedFilter').checked;
+      return (!favOnly || q.favorite) && (!unviewedOnly || !q.viewed);
+    }).sort((a, b) => b.year - a.year);
+
+    loadQuestion();
+    document.getElementById('loader').style.display = 'none';
+  }, 100);
+}
+
+document.getElementById('favoriteFilter').addEventListener('change', initialize);
+document.getElementById('unviewedFilter').addEventListener('change', initialize);
+
+window.speechSynthesis.onvoiceschanged = initialize;
+
+initialize();
+</script>
+</body>
+</html>
